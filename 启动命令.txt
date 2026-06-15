@@ -1,0 +1,18 @@
+# ===== 重要：必须用系统 Python 3.10，不能用 Anaconda =====
+export PATH="/usr/bin:$PATH"
+
+# ===== 所有终端先执行 =====
+source /opt/ros/humble/setup.bash
+source ~/scutracing_ws/install/setup.bash
+
+# ===== 终端 1：启动 Gazebo Harmonic 仿真 =====
+ros2 launch four_wheeled_vehicle simulation_harmonic.launch.py
+
+# ===== 终端 2：启动 SLAM 建图 + 导航规划 + RViz2 =====
+ros2 launch nav_slam 2dpoints.launch.py
+
+# ===== (可选) 终端 3：启动感知节点 =====
+ros2 run sim_perception sim_node
+
+# ===== 手动发目标点让车开始导航 =====
+ros2 topic pub /goal_pose geometry_msgs/msg/PoseStamped "{header: {frame_id: 'map'}, pose: {position: {x: 5.0, y: 0.0, z: 0.0}}}" --once

@@ -1,0 +1,617 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <model name="four_wheeled_vehicle">
+    <pose>0 0 1.0 0 0 0</pose>
+
+    <!-- ========== Base Link ========== -->
+    <link name="base_link">
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>2000</mass>
+        <inertia>
+          <ixx>1200</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>2500</iyy>
+          <iyz>0</iyz>
+          <izz>3000</izz>
+        </inertia>
+      </inertial>
+      <collision name="base_link_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>5.24 1.5 0.47</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="base_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>5.24 1.5 0.47</size>
+          </box>
+        </geometry>
+      </visual>
+    </link>
+
+    <!-- ========== Front Left Steering ========== -->
+    <joint name="front_left_steering_joint" type="revolute">
+      <pose relative_to="base_link">1.445 0.833 -0.024 0 0 0</pose>
+      <parent>base_link</parent>
+      <child>front_left_steering_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-0.6</lower>
+          <upper>0.6</upper>
+          <effort>1e+06</effort>
+          <velocity>10000</velocity>
+        </limit>
+        <dynamics>
+          <damping>10</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <link name="front_left_steering_link">
+      <pose relative_to="front_left_steering_joint">0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>5</mass>
+        <inertia>
+          <ixx>0.0125</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0125</iyy>
+          <iyz>0</iyz>
+          <izz>0.025</izz>
+        </inertia>
+      </inertial>
+      <visual name="front_left_steering_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.01</length>
+            <radius>0.1</radius>
+          </cylinder>
+        </geometry>
+      </visual>
+    </link>
+
+    <!-- Front Left Wheel Joint (drive, axis Z for AckermannSteering) -->
+    <joint name="front_left_wheel_joint" type="revolute">
+      <pose relative_to="front_left_steering_link">0 0 0 0 0 0</pose>
+      <parent>front_left_steering_link</parent>
+      <child>front_left_wheel_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <effort>5000</effort>
+          <velocity>10000</velocity>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <damping>10.0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <link name="front_left_wheel_link">
+      <pose relative_to="front_left_wheel_joint">0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>40</mass>
+        <inertia>
+          <ixx>1.4</ixx>
+          <iyy>2.5</iyy>
+          <izz>1.4</izz>
+        </inertia>
+      </inertial>
+      <collision name="front_left_wheel_link_collision">
+        <pose>0 0 0 1.5708 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.35</length>
+            <radius>0.3</radius>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+              <fdir1>0 0 1</fdir1>
+            </ode>
+            <bullet>
+              <friction>0.8</friction>
+              <friction2>0.8</friction2>
+              <rolling_friction>0.05</rolling_friction>
+            </bullet>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="front_left_wheel_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://four_wheeled_vehicle/meshes/wheel_l.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="front_left_wheel_link_marker">
+        <pose>0 0 0.28 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- ========== Front Right Steering ========== -->
+    <joint name="front_right_steering_joint" type="revolute">
+      <pose relative_to="base_link">1.445 -0.833 -0.024 0 0 0</pose>
+      <parent>base_link</parent>
+      <child>front_right_steering_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-0.6</lower>
+          <upper>0.6</upper>
+          <effort>1e+06</effort>
+          <velocity>10000</velocity>
+        </limit>
+        <dynamics>
+          <damping>10</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <link name="front_right_steering_link">
+      <pose relative_to="front_right_steering_joint">0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>5</mass>
+        <inertia>
+          <ixx>0.0125</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0125</iyy>
+          <iyz>0</iyz>
+          <izz>0.025</izz>
+        </inertia>
+      </inertial>
+      <visual name="front_right_steering_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.3</radius>
+            <length>0.35</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.1 0.1 0.1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- Front Right Wheel Joint (drive, axis Z) -->
+    <joint name="front_right_wheel_joint" type="revolute">
+      <pose relative_to="front_right_steering_link">0 0 0 0 0 0</pose>
+      <parent>front_right_steering_link</parent>
+      <child>front_right_wheel_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <effort>5000</effort>
+          <velocity>10000</velocity>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <damping>10.0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <link name="front_right_wheel_link">
+      <pose relative_to="front_right_wheel_joint">0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>40</mass>
+        <inertia>
+          <ixx>1.4</ixx>
+          <iyy>2.5</iyy>
+          <izz>1.4</izz>
+        </inertia>
+      </inertial>
+      <collision name="front_right_wheel_link_collision">
+        <pose>0 0 0 1.5708 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.35</length>
+            <radius>0.3</radius>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+              <fdir1>0 0 1</fdir1>
+            </ode>
+            <bullet>
+              <friction>0.8</friction>
+              <friction2>0.8</friction2>
+              <rolling_friction>0.05</rolling_friction>
+            </bullet>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="front_right_wheel_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://four_wheeled_vehicle/meshes/wheel_r.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="front_right_wheel_link_marker">
+        <pose>0 0 0.28 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- ========== Rear Left Wheel ========== -->
+    <joint name="rear_left_wheel_joint" type="revolute">
+      <pose relative_to="base_link">-1.545 0.833 -0.024 0 0 0</pose>
+      <parent>base_link</parent>
+      <child>rear_left_wheel_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <effort>5000</effort>
+          <velocity>10000</velocity>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <damping>10.0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <link name="rear_left_wheel_link">
+      <pose relative_to="rear_left_wheel_joint">0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>40</mass>
+        <inertia>
+          <ixx>1.4</ixx>
+          <iyy>2.5</iyy>
+          <izz>1.4</izz>
+        </inertia>
+      </inertial>
+      <collision name="rear_left_wheel_link_collision">
+        <pose>0 0 0 1.5708 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.35</length>
+            <radius>0.3</radius>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+              <fdir1>0 0 1</fdir1>
+            </ode>
+            <bullet>
+              <friction>0.8</friction>
+              <friction2>0.8</friction2>
+              <rolling_friction>0.05</rolling_friction>
+            </bullet>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="rear_left_wheel_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://four_wheeled_vehicle/meshes/wheel_l.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="rear_left_wheel_link_marker">
+        <pose>0 0 0.28 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- ========== Rear Right Wheel ========== -->
+    <joint name="rear_right_wheel_joint" type="revolute">
+      <pose relative_to="base_link">-1.545 -0.833 -0.024 0 0 0</pose>
+      <parent>base_link</parent>
+      <child>rear_right_wheel_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <effort>5000</effort>
+          <velocity>10000</velocity>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <damping>10.0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <link name="rear_right_wheel_link">
+      <pose relative_to="rear_right_wheel_joint">0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>40</mass>
+        <inertia>
+          <ixx>1.4</ixx>
+          <iyy>2.5</iyy>
+          <izz>1.4</izz>
+        </inertia>
+      </inertial>
+      <collision name="rear_right_wheel_link_collision">
+        <pose>0 0 0 1.5708 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.35</length>
+            <radius>0.3</radius>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+              <fdir1>0 0 1</fdir1>
+            </ode>
+            <bullet>
+              <friction>0.8</friction>
+              <friction2>0.8</friction2>
+              <rolling_friction>0.05</rolling_friction>
+            </bullet>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="rear_right_wheel_link_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://four_wheeled_vehicle/meshes/wheel_r.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="rear_right_wheel_link_marker">
+        <pose>0 0 0.28 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- ========== AckermannSteering Plugin ========== -->
+    <plugin
+      filename="gz-sim-ackermann-steering-system"
+      name="gz::sim::systems::AckermannSteering">
+      <left_joint>rear_left_wheel_joint</left_joint>
+      <left_joint>front_left_wheel_joint</left_joint>
+      <right_joint>rear_right_wheel_joint</right_joint>
+      <right_joint>front_right_wheel_joint</right_joint>
+      <left_steering_joint>front_left_steering_joint</left_steering_joint>
+      <right_steering_joint>front_right_steering_joint</right_steering_joint>
+      <wheel_base>3.0</wheel_base>
+      <wheel_separation>1.666</wheel_separation>
+      <wheel_radius>0.3</wheel_radius>
+      <steering_limit>0.6</steering_limit>
+      <kingpin_width>1.666</kingpin_width>
+      <min_velocity>-20.0</min_velocity>
+      <max_velocity>20.0</max_velocity>
+      <min_acceleration>-10</min_acceleration>
+      <max_acceleration>10</max_acceleration>
+      <odom_topic>/model/four_wheeled_vehicle/odometry_internal</odom_topic>
+    </plugin>
+
+    <!-- Odometry Publisher — uses correct frame IDs for ROS 2 consumers -->
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_topic>/model/four_wheeled_vehicle/odometry</odom_topic>
+      <odom_publish_frequency>10</odom_publish_frequency>
+      <dimensions>3</dimensions>
+    </plugin>
+
+    <!-- ========== 3D LiDAR Sensor ========== -->
+    <link name="lidar3d_link">
+      <pose>0 0 1.25 0 0 0</pose>
+      <gravity>0</gravity>
+      <self_collide>false</self_collide>
+
+      <sensor name="lidar3d" type="gpu_lidar">
+        <always_on>1</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+        <pose>0 0 0 0 0 0</pose>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.3962634</min_angle>
+              <max_angle>1.3962634</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>32</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.261799</min_angle>
+              <max_angle>0.261799</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.3</min>
+            <max>100.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.02</stddev>
+          </noise>
+        </ray>
+      </sensor>
+    </link>
+
+    <joint name="lidar3d_fixed_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>lidar3d_link</child>
+      <pose relative_to="base_link">1.30 0 0.95 0 0 0</pose>
+    </joint>
+
+    <!-- ========== GPS / NavSat Sensor ========== -->
+    <link name="gps_link">
+      <pose>0 0 1.25 0 0 0</pose>
+      <gravity>0</gravity>
+      <self_collide>false</self_collide>
+
+      <sensor name="gps" type="navsat">
+        <always_on>1</always_on>
+        <update_rate>10</update_rate>
+        <pose>0 0 0 0 0 0</pose>
+      </sensor>
+    </link>
+
+    <joint name="gps_fixed_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>gps_link</child>
+      <pose relative_to="base_link">-0.50 0 0.95 0 0 0</pose>
+    </joint>
+
+    <!-- ========== IMU Sensor ========== -->
+    <link name="imu_link">
+      <pose>0 0 1.25 0 0 0</pose>
+      <gravity>0</gravity>
+      <self_collide>false</self_collide>
+
+      <sensor name="imu" type="imu">
+        <always_on>1</always_on>
+        <update_rate>200</update_rate>
+        <pose>0 0 0 0 0 0</pose>
+        <imu>
+          <noise>
+            <type>gaussian</type>
+            <accel>
+              <mean>0.0</mean>
+              <stddev>0.05</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.0001</bias_stddev>
+            </accel>
+            <gyro>
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.0001</bias_stddev>
+            </gyro>
+          </noise>
+        </imu>
+      </sensor>
+    </link>
+
+    <joint name="imu_fixed_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>imu_link</child>
+      <pose relative_to="base_link">0 0 0.30 0 0 0</pose>
+    </joint>
+
+    <!-- ========== Camera Sensor ========== -->
+    <link name="camera_link">
+      <pose>0 0 1.35 0 0 0</pose>
+      <gravity>0</gravity>
+      <self_collide>false</self_collide>
+
+      <sensor name="front_camera" type="camera">
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.3962634</horizontal_fov>
+          <image>
+            <width>1280</width>
+            <height>720</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>200.0</far>
+          </clip>
+          <distortion>
+            <k1>0</k1><k2>0</k2><k3>0</k3><p1>0</p1><p2>0</p2>
+          </distortion>
+        </camera>
+      </sensor>
+    </link>
+
+    <joint name="camera_fixed_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_link</child>
+      <pose relative_to="base_link">2.20 0 0.60 0 0 0</pose>
+    </joint>
+
+  </model>
+</sdf>
