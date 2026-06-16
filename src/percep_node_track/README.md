@@ -1,0 +1,7 @@
+感知节点启动：
+ros2 run sim_perception sim_node
+
+models文件夹中的三个子文件夹中的sdf引用的路径可以改成绝对的，或者在launch中定义环境变量
+
+赛道地图在world文件中include就好
+

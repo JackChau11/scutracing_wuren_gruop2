@@ -1,0 +1,5 @@
+geometry_msgs/Point position
+string color
+float64 confidence
+float64 pose_confidence
+float64 color_confidence
