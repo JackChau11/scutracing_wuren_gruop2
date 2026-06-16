@@ -1,199 +1,204 @@
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 import numpy as np
-import heapq
-from nav_msgs.msg import OccupancyGrid, Path
-from geometry_msgs.msg import PoseStamped
 import math
-from rclpy.qos import QoSProfile
-import scipy.interpolate as si
-import numpy as np
-from nav_msgs.msg import Odometry
-from scipy.interpolate import BSpline
-import time
+from nav_msgs.msg import Path, Odometry
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import PointCloud2
+import sensor_msgs_py.point_cloud2 as pc2
 
-expansion_size = 5  # 扩展障碍物大小，用于成本图中的障碍物膨胀
-
-# 处理成本图数据，扩展障碍物
-def costmap(data, width, height, resolution):
-    data = np.array(data).reshape(height, width)  # 重塑数据为矩阵
-    # 扩展障碍物
-    # 使用 NumPy 的广播机制来替代循环
-    wall_mask = data == 100
-    for i in range(-expansion_size, expansion_size + 1):
-        for j in range(-expansion_size, expansion_size + 1):
-            if i == 0 and j == 0:
-                continue
-            shifted_mask = np.roll(wall_mask, (i, j), axis=(0, 1))
-            data[shifted_mask] = 100
-    data = data * resolution  # 将成本图中的值乘以分辨率
-    return data
-
-def bezier_smoothing(array, num_points):
-    try:
-        array = np.array(array)
-        x = array[:, 0]
-        y = array[:, 1]
-        
-        # 计算基于弦长的参数t
-        dx = np.diff(x, prepend=x[0])
-        dy = np.diff(y, prepend=y[0])
-        chord_lengths = np.sqrt(dx**2 + dy**2)  # 弦长
-        t = np.concatenate(([0], np.cumsum(chord_lengths)))  # 累积弦长作为参数t
-        t /= t[-1]  # 规范化到[0, 1]
-        
-        k = num_points-1  # 贝塞尔曲线的阶数，这里选择三次贝塞尔曲线
-        
-        # 添加重复的节点，确保有足够的节点来定义样条
-        t_knots = np.concatenate(([0]*k, t, [1]*k))
-        # 根据新的节点数组调整x和y的长度
-        x_padded = np.pad(x, (k, k), 'edge')
-        y_padded = np.pad(y, (k, k), 'edge')
-        
-        # 创建B样条对象
-        spline_x = BSpline(t_knots, x_padded, k, extrapolate=False)
-        spline_y = BSpline(t_knots, y_padded, k, extrapolate=False)
-        
-        # 基于等间距的t_new重新采样
-        t_new = np.linspace(0, 1, num_points)
-        x_smoothed = spline_x(t_new)
-        y_smoothed = spline_y(t_new)
-        
-        path = np.column_stack((x_smoothed, y_smoothed))
-    except Exception as e:
-        # print(f"Error encountered: {e}")
-        path = array
-    return path
-
-# A*算法
-def astar(start, goal, grid):
-    def heuristic(a, b):
-        return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)  # 使用欧几里得距离作为启发式函数
-    rows, cols = grid.shape
-    open_set = []
-    heapq.heappush(open_set, (0 + heuristic(start, goal), 0, start))
-    came_from = {}
-    cost_so_far = {start: 0}
-    closed_set = set()  # 使用集合来存储已访问的节点
-    while open_set:
-        _, current_cost, current = heapq.heappop(open_set)
-        if current == goal:
-            # 构建路径
-            path = [current]
-            while current in came_from:
-                current = came_from[current]
-                path.append(current)
-            path.reverse()
-            return path
-        if current in closed_set:  # 检查节点是否已被访问过
-            continue
-        closed_set.add(current)  # 标记为已访问
-        for d in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
-            neighbor = (current[0] + d[0], current[1] + d[1])
-            if 0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols and grid[neighbor] != 100:
-                new_cost = cost_so_far[current] + grid[neighbor]
-                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                    cost_so_far[neighbor] = new_cost
-                    priority = new_cost + heuristic(goal, neighbor)
-                    heapq.heappush(open_set, (priority, new_cost, neighbor))
-                    came_from[neighbor] = current
-    return []  # No path found
-
-# 导航控制节点类
-class NavigationControl(Node):
+class LaneFollower(Node):
     def __init__(self):
-        super().__init__('Navigation')  # 初始化ROS 2节点
-        # 创建订阅器订阅地图数据
-        self.map_subscription = self.create_subscription(OccupancyGrid, 'combined_grid', self.map_callback, 10)
-        self.path_publisher = self.create_publisher(Path, 'path', 10)
-        self.path_publisher2 = self.create_publisher(Path, 'path2', 10)
-        self.odom_subscriber = self.create_subscription(Odometry,'/odom',self.odom_callback,10)
-        self.pose_subscriber = self.create_subscription(PoseStamped,'/goal_pose',self.goal_callback,10)
-        self.x = 0.0
-        self.y =0.0
-        self.goal = None
-        self.create_timer(0.1, self.publish_path)
-        self.path = None
-        self.path2 = None
-        
-    def goal_callback(self,msg):
-        self.goal = (msg.pose.position.x,msg.pose.position.y)
-    def odom_callback(self,msg):
+        super().__init__('lane_follower')
+        self.declare_parameter('lane_width', 3.0)
+        self.declare_parameter('min_points', 3)
+        self.declare_parameter('max_range', 1.8)          # 缩小到1.8米，只取近处
+        self.declare_parameter('z_min', -2.5)
+        self.declare_parameter('z_max', -0.5)
+        self.declare_parameter('debug_interval', 10)
+        self.declare_parameter('x_diff_threshold', 0.5)   # 左右平均x差阈值
+        self.lane_width = self.get_parameter('lane_width').value
+        self.min_pts = self.get_parameter('min_points').value
+        self.max_range = self.get_parameter('max_range').value
+        self.z_min = self.get_parameter('z_min').value
+        self.z_max = self.get_parameter('z_max').value
+        self.debug_interval = self.get_parameter('debug_interval').value
+        self.x_diff_threshold = self.get_parameter('x_diff_threshold').value
+
+        self.lidar_sub = self.create_subscription(PointCloud2, '/points_raw', self.lidar_callback, 10)
+        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        self.path_pub = self.create_publisher(Path, '/path', 10)
+
+        self.x = self.y = self.yaw = 0.0
+        self.last_k = 0.0
+        self.last_b = 0.0
+        self.frame_count = 0
+
+    def odom_callback(self, msg):
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
-    
-    # 地图数据回调函数
-    def map_callback(self, msg):
-        if self.goal is None:
-            # print('no goal')
+        q = msg.pose.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        self.yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    def lidar_callback(self, msg):
+        self.frame_count += 1
+        points = []
+        for p in pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True):
+            x, y, z = p
+            if 0.1 < x < self.max_range and abs(y) < 6.0 and self.z_min <= z <= self.z_max:
+                points.append((x, y))
+
+        if self.frame_count % self.debug_interval == 0:
+            self.get_logger().info(f"Frame {self.frame_count}: Raw points in ROI = {len(points)}")
+
+        if len(points) < self.min_pts * 2:
+            if self.frame_count % self.debug_interval == 0:
+                self.get_logger().warn(f"Too few points ({len(points)}), using straight path")
+            path = self.generate_straight_path()
+            self.publish_path(path)
             return
-        distance = abs(math.hypot(self.x - self.goal[0], self.y - self.goal[1]))
-        # print(distance)
-        if distance > 0.2:
-            path = []
-            resolution = msg.info.resolution  # 获取地图分辨率
-            originX = msg.info.origin.position.x  # 获取地图原点x坐标
-            originY = msg.info.origin.position.y  # 获取地图原点y坐标
-            column = int((self.x - originX) / resolution)  # 计算机器人的x坐标对应的列索引
-            row = int((self.y - originY) / resolution)  # 计算机器人的y坐标对应的行索引
-            columnH = int((self.goal[0] - originX) / resolution)  # 计算目标位置的x坐标对应的列索引
-            rowH = int((self.goal[1] - originY) / resolution)  # 计算目标位置的y坐标对应的行索引
-            data = costmap(msg.data, msg.info.width, msg.info.height, resolution)  # 处理成本图数据
-            data[row][column] = 1  # 将机器人位置标记为可通行区域
-            # 将-1到5之间的值设为1，其余值设为100
-            data[(data >= -2) & (data <= 5)] = 1
-            data[(data < -2) | (data > 5)] = 100 #根据地图信息标记
-            start = (row, column)
-            goal = (rowH, columnH)
-            path = astar(start, goal, data)
-            paths = [(p[1] * resolution + originX, p[0] * resolution + originY) for p in path]
-            self.path =paths
-            self.path2 = bezier_smoothing(paths, len(paths))  # 减少平滑后的点数
-            if len(self.path) > 5:
-                self.path = self.path
-                self.path2 = self.path2
-                
-            else:
-                pass
-            # self.publish_path(paths)#发布平滑后的路径
+
+        left_pts = [(x, y) for x, y in points if y > 0]
+        right_pts = [(x, y) for x, y in points if y < 0]
+
+        if self.frame_count % self.debug_interval == 0:
+            self.get_logger().info(f"Left: {len(left_pts)}, Right: {len(right_pts)}")
+
+        # 计算左右点云的平均 x
+        mean_x_left = np.mean([p[0] for p in left_pts]) if left_pts else float('inf')
+        mean_x_right = np.mean([p[0] for p in right_pts]) if right_pts else float('inf')
+
+        # 如果某一侧点太少，直接使用另一侧
+        if len(left_pts) < self.min_pts and len(right_pts) < self.min_pts:
+            path = self.generate_straight_path()
+            self.publish_path(path)
+            return
+        elif len(left_pts) < self.min_pts:
+            # 只用右侧，向左偏移
+            k_r, b_r = self.fit_line(right_pts)
+            if k_r is None:
+                path = self.generate_straight_path()
+                self.publish_path(path)
+                return
+            k_c, b_c = k_r, b_r + self.lane_width / 2.0
+        elif len(right_pts) < self.min_pts:
+            # 只用左侧，向右偏移
+            k_l, b_l = self.fit_line(left_pts)
+            if k_l is None:
+                path = self.generate_straight_path()
+                self.publish_path(path)
+                return
+            k_c, b_c = k_l, b_l - self.lane_width / 2.0
         else:
-            # print("reach goal----nav stop")
-            pass
-    
-    # 发布路径
-    def publish_path(self):
-        if self.path is None or len(self.path)==0:
-            # print('no path')
+            # 两侧都有足够点，判断纵向距离差
+            if abs(mean_x_left - mean_x_right) > self.x_diff_threshold:
+                # 选择较近的一侧（平均 x 较小）
+                if mean_x_left < mean_x_right:
+                    # 使用左侧，向右偏移
+                    k_l, b_l = self.fit_line(left_pts)
+                    if k_l is None:
+                        path = self.generate_straight_path()
+                        self.publish_path(path)
+                        return
+                    k_c, b_c = k_l, b_l - self.lane_width / 2.0
+                    if self.frame_count % self.debug_interval == 0:
+                        self.get_logger().info("Using left side (closer)")
+                else:
+                    # 使用右侧，向左偏移
+                    k_r, b_r = self.fit_line(right_pts)
+                    if k_r is None:
+                        path = self.generate_straight_path()
+                        self.publish_path(path)
+                        return
+                    k_c, b_c = k_r, b_r + self.lane_width / 2.0
+                    if self.frame_count % self.debug_interval == 0:
+                        self.get_logger().info("Using right side (closer)")
+            else:
+                # 纵向距离接近，可以两侧拟合取平均
+                k_l, b_l = self.fit_line(left_pts)
+                k_r, b_r = self.fit_line(right_pts)
+                if k_l is None or k_r is None:
+                    # 如果某侧拟合失败，回退
+                    path = self.generate_straight_path()
+                    self.publish_path(path)
+                    return
+                k_c = (k_l + k_r) / 2.0
+                b_c = (b_l + b_r) / 2.0
+
+        # 低通滤波
+        alpha = 0.6
+        k_c = alpha * k_c + (1 - alpha) * self.last_k
+        b_c = alpha * b_c + (1 - alpha) * self.last_b
+        self.last_k, self.last_b = k_c, b_c
+
+        if self.frame_count % self.debug_interval == 0:
+            self.get_logger().info(f"Center fit: k={k_c:.3f}, b={b_c:.3f}")
+
+        # 生成路径
+        step = 0.2
+        path_pts = []
+        for i in range(int(self.max_range / step) + 1):
+            x_local = i * step
+            y_local = k_c * x_local + b_c
+            y_local = np.clip(y_local, -5.0, 5.0)
+            path_pts.append((x_local, y_local))
+
+        cos_y = math.cos(self.yaw)
+        sin_y = math.sin(self.yaw)
+        world_pts = []
+        for px, py in path_pts:
+            wx = self.x + px * cos_y - py * sin_y
+            wy = self.y + px * sin_y + py * cos_y
+            world_pts.append((wx, wy))
+
+        self.publish_path(world_pts)
+
+    def fit_line(self, pts):
+        if len(pts) < self.min_pts:
+            return None, None
+        xs = np.array([p[0] for p in pts])
+        ys = np.array([p[1] for p in pts])
+        A = np.vstack([xs, np.ones(len(xs))]).T
+        k, b = np.linalg.lstsq(A, ys, rcond=None)[0]
+        return k, b
+
+    def generate_straight_path(self):
+        cos_y = math.cos(self.yaw)
+        sin_y = math.sin(self.yaw)
+        step = 0.2
+        pts = []
+        for i in range(int(self.max_range / step) + 1):
+            px = i * step
+            py = 0.0
+            wx = self.x + px * cos_y - py * sin_y
+            wy = self.y + px * sin_y + py * cos_y
+            pts.append((wx, wy))
+        return pts
+
+    def publish_path(self, world_pts):
+        if len(world_pts) < 2:
             return
-        path_msg = Path()
-        path_msg.header.frame_id = 'map'
-        for (y, x) in self.path:
+        msg = Path()
+        msg.header.frame_id = 'odom'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        for x, y in world_pts:
             pose = PoseStamped()
-            pose.header.frame_id = 'map'
-            pose.pose.position.x = float(y)
-            pose.pose.position.y = float(x)
-            path_msg.poses.append(pose)
-        self.path_publisher.publish(path_msg)
+            pose.header.frame_id = 'odom'
+            pose.pose.position.x = float(x)
+            pose.pose.position.y = float(y)
+            pose.pose.orientation.w = 1.0
+            msg.poses.append(pose)
+        self.path_pub.publish(msg)
 
-
-        path2_msg = Path()
-        path2_msg.header.frame_id = 'map'
-        for (y, x) in self.path2:
-            pose2 = PoseStamped()
-            pose2.header.frame_id = 'map'
-            pose2.pose.position.x = float(y)
-            pose2.pose.position.y = float(x)
-            path2_msg.poses.append(pose2)
-        self.path_publisher2.publish(path2_msg)
-
-# 主函数
 def main(args=None):
-    rclpy.init(args=args)  # 初始化ROS 2
-    navigation_control = NavigationControl()  # 创建导航控制节点实例
-    rclpy.spin(navigation_control)  # 运行节点
-    navigation_control.destroy_node()  # 销毁节点
-    rclpy.shutdown()  # 关闭ROS 2
+    rclpy.init(args=args)
+    node = LaneFollower()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
-# 如果直接运行此文件，则执行主函数
 if __name__ == '__main__':
     main()

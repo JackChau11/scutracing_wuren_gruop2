@@ -9,6 +9,7 @@ from scipy.spatial import KDTree
 from nav_msgs.msg import Path
 import yaml
 import os
+
 # 纯追踪控制器
 class PurePursuitController:
     def __init__(self, lookahead_distance):
@@ -19,6 +20,7 @@ class PurePursuitController:
         closest_point_idx = KDTree(path_points[:, :2]).query(vehicle_pose[:2])[1]
         
         # 动态选择最合适的路径点作为目标点
+        target_point = path_points[-1]  # 默认用最后一个点
         for i in range(len(path_points)):
             lookahead_point_idx = (closest_point_idx + i) % len(path_points)
             target_point = path_points[lookahead_point_idx]
@@ -45,7 +47,7 @@ class PathFollowingNode(Node):
     def __init__(self):
         super().__init__('path_following_node')
         # 创建纯追踪控制器
-        self.pure_pursuit = PurePursuitController(lookahead_distance=0.5)
+        self.pure_pursuit = PurePursuitController(lookahead_distance=3.0)  # 增大前瞻
         # 创建路径点
         self.path_points = None
         # 创建订阅者
@@ -56,35 +58,27 @@ class PathFollowingNode(Node):
         self.path_subscriber = self.create_subscription(Path, '/path', self.path_callback, 10)
         # 变量初始化
         self.current_odom = None
-        
-        self.stop_flag = False  # 新增的停止标志
-        self.path_received = False  # 添加路径是否已接收的标志
-        # self.get_logger().info('ready--------ok----to---nav')
+        self.stop_flag = False
+        self.path_received = False
+        self.cmd_count = 0  # 用于控制打印频率
 
     def path_callback(self, msg):
         self.path_points_list = [[point.pose.position.x, point.pose.position.y] for point in msg.poses]
-        # 将列表转换为 numpy 数组
         self.path_points = np.array(self.path_points_list)
         assert self.path_points.ndim == 2, "path_points must be a 2D array"
-        # 对路径点进行插值
-        self.path_points = self.interpolate_path(self.path_points)
-        self.path_received = True  # 设置路径接收标志
-        # print('received path ready to nav-------------')
+        self.path_points = self.interpolate_path(self.path_points, segment_length=0.05)
+        self.path_received = True
 
     def interpolate_path(self, points, segment_length=0.1):
         interpolated_points = []
         for i in range(len(points) - 1):
             start_point = points[i]
             end_point = points[i+1]
-            # 计算两点之间的距离
             distance = np.linalg.norm(end_point - start_point)
-            # 计算所需点的数量（包括起点）
             num_points = int(distance / segment_length) + 1
-            # 生成线性插值点
             t_values = np.linspace(0, 1, num_points)
             interpolated_segment = start_point + (end_point - start_point)[np.newaxis, :] * t_values[:, np.newaxis]
             interpolated_points.append(interpolated_segment)
-        # 将所有插值点合并成一个数组
         return np.vstack(interpolated_points)
 
     def quaternion_to_yaw(self, q):
@@ -94,48 +88,43 @@ class PathFollowingNode(Node):
         return yaw
 
     def odometry_callback(self, msg):
-        self.current_xy = [msg.pose.pose.position.x, msg.pose.pose.position.y]
-        if not self.path_received:
-            return  # 如果还没有接收到路径，则直接返回
-        self.current_odom = msg
-        # 提取位置和朝向
+        self.cmd_count += 1
+        # 先提取车辆位姿
         pose = [msg.pose.pose.position.x, msg.pose.pose.position.y, self.quaternion_to_yaw(msg.pose.pose.orientation)]
-        
-        # 纯追踪控制器计算转向角和目标点
+        self.current_xy = pose[:2]
+
+        if not self.path_received or self.path_points is None:
+            return
+
+        # 计算控制量
         steering_angle, target_point = self.pure_pursuit.calculate_steering_angle(pose, self.path_points)
-        
-        # 计算到路径终点的距离
         distance_to_end = np.linalg.norm(np.array(pose[:2]) - self.path_points[-1])
-        
+
         # 停止条件
-        if distance_to_end < 0.2:  # 0.2m作为接近阈值
+        if distance_to_end < 0.3:  # 增大停止阈值
             speed = 0.0
             steering_angle = 0.0
             self.path_received = False
-            # self.get_logger().info('Naving node.success..')
+            if self.cmd_count % 10 == 0:
+                self.get_logger().info("Goal reached, stopping.")
         else:
-            # 根据转向角大小调整速度
-            # 使用 sin 函数来调整速度，当转向角接近 0 时，速度接近最大值；当转向角增大时，速度逐渐减小
-            # 使用多项式函数调整速度
-            def sigmoid(x):
-                return 1 / (1 + math.exp(-x))
+            # 速度根据转向角调整，最大0.8 m/s，最小0.2 m/s
+            speed = max(0.2, 0.5 - 0.4 * abs(steering_angle) / (math.pi/2))
+            # 限制最大速度
+            speed = min(speed, 0.8)
 
-            # 将转向角缩放到 [-1, 1] 范围
-            scaled_steering_angle = steering_angle / (math.pi / 2)
-
-            speed = max(0.6, 1.5 - 1.5*math.sin(0.6*abs(steering_angle)))
-
-    
-
-        # 发布速度和转向角
+        # 发布指令
         cmd_vel_msg = Twist()
-        cmd_vel_msg.linear.x = speed
-        cmd_vel_msg.angular.z = steering_angle
+        cmd_vel_msg.linear.x = float(speed)
+        cmd_vel_msg.angular.z = float(steering_angle)
         self.cmd_vel_publisher.publish(cmd_vel_msg)
 
-    
-
-        # self.get_logger().info(f'v: {speed:.2f}, ang: {steering_angle:.2f}, dist_to_end: {distance_to_end:.2f}')
+        # 每5帧打印一次控制信息（避免刷屏）
+        if self.cmd_count % 5 == 0:
+            self.get_logger().info(
+                f"Cmd #{self.cmd_count}: v={speed:.2f}, ang={steering_angle:.3f}, "
+                f"dist_to_end={distance_to_end:.2f}, target=({target_point[0]:.2f},{target_point[1]:.2f})"
+            )
 
 def main(args=None):
     rclpy.init(args=args)
