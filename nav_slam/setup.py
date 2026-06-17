@@ -16,18 +16,19 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='boxing/喵了个水蓝蓝',
+    maintainer='',
     maintainer_email='clibang2022@163.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'astar = nav_slam.astar:main',
+            'perception_path_planner = nav_slam.perception_path_planner:main',
             'map_pub = nav_slam.map_pub:main',
-            'odom_map_tf = nav_slam.odom_map_tf:main',
+#            'odom_map_tf = nav_slam.odom_map_tf:main',
             'points_pub_map = nav_slam.points_pub_map:main',
             'start_nav = nav_slam.start_nav:main',
+            'odom_tf_pub = nav_slam.odom_tf_pub:main',
             
         ],
     },

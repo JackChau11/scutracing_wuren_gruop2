@@ -8,7 +8,7 @@ import numpy as np
 class PointCloudTransformNode(Node):
     def __init__(self):
         super().__init__('pointcloud_transform_node')
-        self.declare_parameter('frame_id', 'map')
+        self.declare_parameter('frame_id', 'world')   # 改为 world
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.pointcloud_sub = self.create_subscription(PointCloud2, '/points_raw', self.pointcloud_callback, 10)
         self.transformed_pointcloud_pub = self.create_publisher(PointCloud2, '/mapokk', 10)
@@ -49,7 +49,6 @@ class PointCloudTransformNode(Node):
         if self.rotation_matrix is None:
             return
 
-        # 手动构建标准数组
         points_list = []
         for p in pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True):
             points_list.append((p[0], p[1], p[2]))
@@ -68,7 +67,7 @@ class PointCloudTransformNode(Node):
         transformed = (self.rotation_matrix @ points_hom.T).T[:, :3]
 
         header = msg.header
-        header.frame_id = self.get_parameter('frame_id').value
+        header.frame_id = self.get_parameter('frame_id').value   # 使用 world
         cloud_msg = pc2.create_cloud_xyz32(header, transformed)
         self.transformed_pointcloud_pub.publish(cloud_msg)
         

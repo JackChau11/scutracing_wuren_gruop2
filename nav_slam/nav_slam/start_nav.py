@@ -47,7 +47,7 @@ class PathFollowingNode(Node):
     def __init__(self):
         super().__init__('path_following_node')
         # 创建纯追踪控制器
-        self.pure_pursuit = PurePursuitController(lookahead_distance=3.0)  # 增大前瞻
+        self.pure_pursuit = PurePursuitController(lookahead_distance=2.0)  # 增大前瞻
         # 创建路径点
         self.path_points = None
         # 创建订阅者
@@ -108,10 +108,9 @@ class PathFollowingNode(Node):
             if self.cmd_count % 10 == 0:
                 self.get_logger().info("Goal reached, stopping.")
         else:
-            # 速度根据转向角调整，最大0.8 m/s，最小0.2 m/s
-            speed = max(0.2, 0.5 - 0.4 * abs(steering_angle) / (math.pi/2))
-            # 限制最大速度
-            speed = min(speed, 0.8)
+            # 速度根据转向角调整
+            speed = max(0.8, 1.5 - abs(steering_angle) / (math.pi/2))
+            
 
         # 发布指令
         cmd_vel_msg = Twist()
