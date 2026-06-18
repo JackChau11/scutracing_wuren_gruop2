@@ -1,3 +1,28 @@
+#!/usr/bin/env python3
+"""
+节点: path_following_node
+功能: 订阅 /path 路径，使用纯追踪控制计算控制指令，发布至 /cmd_vel，驱动车辆跟随路径。
+
+输入:
+/path (nav_msgs/Path) : 待跟踪的全局路径（frame_id = 'odom'）
+/odom (nav_msgs/Odometry) : 车辆里程计，获取当前位置和朝向
+
+输出:
+/cmd_vel (geometry_msgs/Twist) : 线速度和角速度指令
+
+逻辑:
+  1. 缓存最新车辆位姿 (x, y, yaw)。
+  2. 当收到新路径时，将其插值为更密集的点 (segment_length=0.05m)。
+  3. 在路径点上使用 KDTree 找到离车辆最近的点，然后向前搜索满足前瞻距离 (lookahead_distance) 的目标点。
+  4. 计算目标点相对车辆的航向角，得到转向角 (steering_angle)。
+  5. 速度根据转向角自适应：speed = max(0.8, 1.5 - |steering_angle|/(π/2))，确保弯道减速。
+  6. 当车辆与路径终点距离 < 0.3m 时，停止并清空路径。
+  7. 发布 Twist 指令。
+
+关键参数:
+lookahead_distance 前瞻距离，可在初始化时调整
+"""
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -47,7 +72,7 @@ class PathFollowingNode(Node):
     def __init__(self):
         super().__init__('path_following_node')
         # 创建纯追踪控制器
-        self.pure_pursuit = PurePursuitController(lookahead_distance=2.0)  # 增大前瞻
+        self.pure_pursuit = PurePursuitController(lookahead_distance=2.0)  #前瞻距离在这里调整
         # 创建路径点
         self.path_points = None
         # 创建订阅者
@@ -101,7 +126,7 @@ class PathFollowingNode(Node):
         distance_to_end = np.linalg.norm(np.array(pose[:2]) - self.path_points[-1])
 
         # 停止条件
-        if distance_to_end < 0.3:  # 增大停止阈值
+        if distance_to_end < 0.3:  
             speed = 0.0
             steering_angle = 0.0
             self.path_received = False
@@ -119,11 +144,11 @@ class PathFollowingNode(Node):
         self.cmd_vel_publisher.publish(cmd_vel_msg)
 
         # 每5帧打印一次控制信息（避免刷屏）
-        if self.cmd_count % 5 == 0:
-            self.get_logger().info(
-                f"Cmd #{self.cmd_count}: v={speed:.2f}, ang={steering_angle:.3f}, "
-                f"dist_to_end={distance_to_end:.2f}, target=({target_point[0]:.2f},{target_point[1]:.2f})"
-            )
+#        if self.cmd_count % 5 == 0:
+#            self.get_logger().info(
+#                f"Cmd #{self.cmd_count}: v={speed:.2f}, ang={steering_angle:.3f}, "
+#                f"dist_to_end={distance_to_end:.2f}, target=({target_point[0]:.2f},{target_point[1]:.2f})"
+#            )
 
 def main(args=None):
     rclpy.init(args=args)

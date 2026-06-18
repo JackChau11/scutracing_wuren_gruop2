@@ -1,3 +1,36 @@
+#!/usr/bin/env python3
+"""
+节点: obstacle_grid_node
+功能: 利用转换后的点云 (mapokk) 构建占据栅格地图 (OccupancyGrid)，包含障碍物及多层膨胀区域。
+
+输入:
+订阅 /mapokk (sensor_msgs/PointCloud2) : 已转换到 world 坐标系的点云
+订阅 /odom (nav_msgs/Odometry) : 里程计（用于确定地图原点，但实际代码中未使用，仅作依赖）
+
+输出:
+发布 /combined_grid (nav_msgs/OccupancyGrid) : 占据栅格地图，frame_id = 'world'
+
+逻辑:
+1. 初始化固定大小的栅格地图（默认 60m×60m，分辨率 0.1m），所有栅格初始化为 -1（未知）。
+2. 收到点云后，对每个点检查高度是否在 min_height ~ max_height 之间，若满足则视为障碍物。
+3. 计算障碍物在栅格中的索引，存入 obstacles 集合。
+4. 对障碍物进行三层膨胀（半径分别为 obstacle_radius, 2*obstacle_radius, 3*obstacle_radius），分别存入三个膨胀层集合。
+5. 在 update_combined_grid 中，将地图数据置为 1（空闲），然后按层级赋值：
+ 障碍物本身: 100
+ 第一层膨胀: 5
+ 第二层膨胀: -8
+ 第三层膨胀: -120
+6. 发布更新后的地图。
+
+关键参数（可通过 launch 或 yaml 设置）:
+grid_width: 60.0 (米)
+grid_height: 60.0 (米)
+resolution: 0.1 (米/格)
+min_height: 0.1 (米) 障碍物最低高度
+max_height: 1.0 (米) 障碍物最高高度
+obstacle_radius: 0.2 (米) 膨胀半径基础值
+"""
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2

@@ -1,4 +1,33 @@
 #!/usr/bin/env python3
+"""
+节点: perception_path_planner
+功能: 基于锥桶（感知节点sim_node）或激光雷达实时生成局部路径，并发布至 /path。支持用户交互切换模式，切换时需用户确认。
+
+输入:
+/perception/cones (fsd_common_msgs/ConeDetections) : 锥桶检测结果（含位置、颜色、置信度）
+/points_raw (sensor_msgs/PointCloud2) : 激光雷达点云（base_link 坐标系）
+/odom (nav_msgs/Odometry) : 里程计，获取车辆位姿
+
+输出:
+/path (nav_msgs/Path) : 生成的路径，frame_id = 'odom'
+
+逻辑:
+  1. 初始模式为 'CONES'（优先使用锥桶）。
+  2. 锥桶路径生成:
+       获取 odom → base_link TF，将锥桶坐标转换到 odom。
+       按颜色分组（红色/蓝色），计算每个锥桶相对于车辆前进方向的投影 (s) 和横向偏移 (l)。
+       过滤投影 < 0.5m 的后方锥桶。
+       分别对左右两侧点进行多项式拟合 (l = f(s))，阶数根据点数自动选择 (1次或2次)。
+       取两侧拟合曲线的中点，在 0 ~ max_s 范围内均匀采样，生成路径点。
+  3. 激光雷达路径生成（备用）:
+       按横向正负分为左右点，拟合直线 (x = k*y + b)，并偏移车道宽度得到中心线。
+       在纵向 0 ~ max_range 内采样，生成路径点。
+  4. 模式切换:
+       当锥桶颜色置信度 ≥ confidence_threshold 且数量足够，且当前为 LIDAR 时，请求切换至 CONES；反之请求切换至 LIDAR。
+       切换请求时立即停车（发布空路径），等待用户终端输入 'Y' (确认切换) 或 'n' (取消，保持停车)。
+       输入 'Y' 后切换模式并恢复路径发布。可能会被刷屏的终端输出信息影响
+"""
+
 import rclpy
 from rclpy.node import Node
 import numpy as np
@@ -7,7 +36,6 @@ import threading
 import sys
 import select
 import time
-
 from geometry_msgs.msg import PointStamped, PoseStamped
 from nav_msgs.msg import Path, Odometry
 from sensor_msgs.msg import PointCloud2
@@ -21,7 +49,7 @@ class PerceptionPathPlanner(Node):
     def __init__(self):
         super().__init__('perception_path_planner')
 
-        # ---------- 参数 ----------
+        #设置参数
         self.declare_parameter('lane_width', 3.0)
         self.declare_parameter('min_points', 3)
         self.declare_parameter('max_range_lidar', 10.0)
@@ -42,24 +70,24 @@ class PerceptionPathPlanner(Node):
         self.x_diff_threshold = self.get_parameter('x_diff_threshold').value
         self.conf_thresh = self.get_parameter('confidence_threshold').value
 
-        # ---------- 订阅者 ----------
+        #订阅者
         self.lidar_sub = self.create_subscription(PointCloud2, '/points_raw', self.lidar_callback, 10)
         self.cones_sub = self.create_subscription(ConeDetections, '/perception/cones', self.cones_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
 
-        # ---------- 发布者 ----------
+        #发布者
         self.path_pub = self.create_publisher(Path, '/path', 10)
 
-        # ---------- TF ----------
+        #TF
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # ---------- 状态变量 ----------
-        self.current_pose = None                 # (x, y, yaw) in odom
-        self.lidar_points = []                  # (横向, 纵向)
-        self.cone_data = []                     # (x_odom, y_odom, color, color_confidence)
+        #状态变量
+        self.current_pose = None  # (x, y, yaw) in odom
+        self.lidar_points = []  # (横向, 纵向)
+        self.cone_data = []  # (x_odom, y_odom, color, color_confidence)
         self.cone_confidence_ok = False
-        self.mode = 'CONES'                     # 初始模式为感知节点
+        self.mode = 'CONES'  # 初始模式为感知节点
         self.last_k = 0.0
         self.last_b = 0.0
         self.frame_count = 0
@@ -67,12 +95,12 @@ class PerceptionPathPlanner(Node):
         self.switch_target = None
         self.running = True
 
-        # 启动输入监听线程
+        #启动输入监听线程
         self.start_input_listener()
 
         self.get_logger().info('Perception Path Planner started in CONES mode (感知节点)')
 
-    # ================== 回调函数 ==================
+    #回调函数
     def odom_callback(self, msg):
         q = msg.pose.pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
@@ -89,8 +117,8 @@ class PerceptionPathPlanner(Node):
         points = []
         for p in pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True):
             orig_x, orig_y, z = p
-            y_forward = orig_x       # 纵向
-            x_lateral = orig_y       # 横向
+            y_forward = orig_x  # 纵向
+            x_lateral = orig_y  # 横向
             if 0.1 < y_forward < self.max_range_lidar and abs(x_lateral) < 6.0 and self.z_min <= z <= self.z_max:
                 points.append((x_lateral, y_forward))
         self.lidar_points = points
@@ -126,7 +154,7 @@ class PerceptionPathPlanner(Node):
         self.cone_data = cone_odom
         self.cone_confidence_ok = all_conf_ok and len(cone_odom) >= 4
 
-        # 模式切换请求逻辑（仅在非等待状态时发起新请求）
+        #模式切换请求（仅在非等待状态时发起新请求）
         if not self.switch_requested:
             if self.mode == 'CONES' and not self.cone_confidence_ok:
                 self.request_switch('LIDAR')
@@ -135,7 +163,7 @@ class PerceptionPathPlanner(Node):
 
         self.publish_path()
 
-    # ================== 路径生成 ==================
+    #路径生成
     def publish_path(self):
         # 如果正在等待用户确认，立即停车，不生成任何路径
         if self.switch_requested:
@@ -163,7 +191,7 @@ class PerceptionPathPlanner(Node):
             if path is not None:
                 self.path_pub.publish(path)
 
-    # ---------- 锥桶路径 ----------
+    #锥桶路径
     def generate_path_from_cones(self):
         if len(self.cone_data) < 4:
             return None
@@ -230,7 +258,7 @@ class PerceptionPathPlanner(Node):
         self.get_logger().info(f'[CONES] Published path with {len(path_msg.poses)} points')
         return path_msg
 
-    # ---------- 激光雷达路径 ----------
+    #激光雷达路径
     def generate_path_from_lidar(self):
         points = self.lidar_points
         if len(points) < self.min_pts * 2:
@@ -307,7 +335,7 @@ class PerceptionPathPlanner(Node):
             pose.pose.position.z = 0.0
             path_msg.poses.append(pose)
 
-        self.get_logger().info(f'[LIDAR] Published path with {len(path_msg.poses)} points')
+        #self.get_logger().info(f'[LIDAR] Published path with {len(path_msg.poses)} points')
         return path_msg
 
     def fit_line(self, pts):
@@ -342,7 +370,7 @@ class PerceptionPathPlanner(Node):
             path_msg.poses.append(pose)
         return path_msg
 
-    # ================== 模式切换与用户输入 ==================
+    #模式切换与用户输入
     def request_switch(self, target_mode):
         if self.switch_requested:
             return
@@ -388,7 +416,7 @@ class PerceptionPathPlanner(Node):
         path_msg.header.stamp = self.get_clock().now().to_msg()
         path_msg.header.frame_id = 'odom'
         self.path_pub.publish(path_msg)
-        # 仅当第一次停车或状态变化时打印，避免刷屏，这里不重复打印
+        #仅当第一次停车或状态变化时打印，避免刷屏，这里不重复打印
 
     def destroy_node(self):
         self.running = False

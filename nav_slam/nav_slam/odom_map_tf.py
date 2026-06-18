@@ -1,3 +1,21 @@
+#!/usr/bin/env python3
+"""
+节点: odom_to_map_transformer
+功能: 发布 map → odom 动态TF，将里程计位姿映射到地图坐标系（用于全局定位或与地图对齐）
+
+输入:
+订阅 /odom (nav_msgs/Odometry) : 里程计数据
+
+输出:
+发布 TransformStamped 到 /tf，帧: map → odom
+
+逻辑:
+  1. 接收到 /odom 后，直接将其位置和姿态作为 map 下 odom 的变换。
+  2. 通过 TransformBroadcaster 广播变换，使 map 与 odom 同步。
+
+说明: 此节点与建图节点配合使用，使地图坐标系与里程计坐标系相关联。
+"""
+
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry

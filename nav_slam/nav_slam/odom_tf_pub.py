@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+"""
+节点: odom_tf_publisher
+功能: 发布 odom → base_link 动态TF，将里程计位姿传递给TF树，供其他节点进行坐标变换
+
+输入:
+  订阅 /odom (nav_msgs/Odometry) : 里程计数据
+
+输出:
+  发布 TransformStamped 到 /tf，帧: odom转换到base_link
+
+逻辑:
+  1. 收到 /odom 消息后，提取位置 (x,y,z) 和姿态
+  2. 构造 TransformStamped，设置 header.frame_id = 'odom', child_frame_id = 'base_link'
+  3. 通过 TransformBroadcaster 广播该变换
+"""
+
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry

@@ -1,3 +1,22 @@
+#!/usr/bin/env python3
+"""
+节点: pointcloud_transform_node
+功能: 将激光雷达点云从 base_link 坐标系转换到 world 坐标系，供建图节点使用
+
+输入:
+订阅 /points_raw (sensor_msgs/PointCloud2) : 原始激光雷达点云（base_link 坐标系）
+订阅 /odom (nav_msgs/Odometry) : 里程计，用于获取车辆位姿
+
+输出:
+发布 /mapokk (sensor_msgs/PointCloud2) : 转换后的点云，frame_id = 'world'
+
+逻辑:
+  1. 缓存最新里程计，提取位置 (x,y,z) 和四元数。
+  2. 根据四元数计算旋转矩阵，构建 4x4 变换矩阵（包括平移）。
+  3. 收到点云后，将每个点 (x,y,z) 转为齐次坐标，乘以变换矩阵得到 world 坐标。
+  4. 发布转换后的点云，frame_id 设置为 'world'（也可以通过参数 'frame_id' 修改）。
+"""
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
@@ -8,7 +27,7 @@ import numpy as np
 class PointCloudTransformNode(Node):
     def __init__(self):
         super().__init__('pointcloud_transform_node')
-        self.declare_parameter('frame_id', 'world')   # 改为 world
+        self.declare_parameter('frame_id', 'world')   
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.pointcloud_sub = self.create_subscription(PointCloud2, '/points_raw', self.pointcloud_callback, 10)
         self.transformed_pointcloud_pub = self.create_publisher(PointCloud2, '/mapokk', 10)
@@ -67,7 +86,7 @@ class PointCloudTransformNode(Node):
         transformed = (self.rotation_matrix @ points_hom.T).T[:, :3]
 
         header = msg.header
-        header.frame_id = self.get_parameter('frame_id').value   # 使用 world
+        header.frame_id = self.get_parameter('frame_id').value  
         cloud_msg = pc2.create_cloud_xyz32(header, transformed)
         self.transformed_pointcloud_pub.publish(cloud_msg)
         

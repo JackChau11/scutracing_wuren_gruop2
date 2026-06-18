@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+"""
+功能: 启动路径规划节点、控制节点和RViz可视化。
+
+启动的节点:
+  1. perception_path_planner: 基于锥桶/激光雷达生成局部路径。
+  2. start_nav: 纯追踪控制器，发布控制指令。
+  3. rviz2: 可视化界面，加载 rviz.rviz 配置。
+
+说明: 启动前先确保已启动仿真环境和感知节点。
+"""
+
 import os
 from launch import LaunchDescription
 from launch_ros.actions import Node
@@ -10,11 +22,10 @@ def generate_launch_description():
     config_dir = get_package_share_directory(package_name)
     rviz_config_file = os.path.join(config_dir, 'config', 'rviz.rviz')
 
-    # 使用 astar 节点（已被新代码覆盖）
-    astar = Node(
+    path_planner = Node(
         package='nav_slam',
-        executable='astar',
-        name='astar',
+        executable='perception_path_planner',
+        name='perception_path_planner',
         output='screen',
     )
 
@@ -22,13 +33,6 @@ def generate_launch_description():
         package='nav_slam',
         executable='start_nav',
         name='start_nav',
-        output='screen',
-    )
-
-    static_tf = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_link'],
         output='screen',
     )
 
@@ -40,10 +44,8 @@ def generate_launch_description():
         arguments=['-d', rviz_config_file],
     )
 
-    # 移除旧的 map_pub, points_pub_map 等
-    ld.add_action(astar)
+    ld.add_action(path_planner)
     ld.add_action(start_nav)
-    ld.add_action(static_tf)
     ld.add_action(rviz2_node)
 
     return ld
